@@ -1,0 +1,123 @@
+#TIMEHORIZON
+T = 8760;
+
+#GLOBAL
+
+solar_capex = 870;
+solar_lifetime = 35;
+solar_an_capex = solar_capex / solar_lifetime;
+solar_opex = 10.6;
+
+wind_capex = 2780;
+wind_lifetime = 30;
+wind_an_capex = wind_capex / wind_lifetime;
+wind_opex = 44;
+
+battery_capex = 290;
+battery_lifetime = 15;
+battery_an_capex = battery_capex / battery_lifetime;
+battery_opex = 8.4;
+
+load_scale = 2000;
+
+#NODE solar_pv
+
+#PARAMETERS
+capacity_factor = import "../data/pure_solar_pv.csv";
+
+#VARIABLES
+external: capacity;
+external: power[T];
+
+#CONSTRAINTS
+capacity >= 0;
+power[t] >= 0;
+power[t] <= capacity_factor[t] * capacity;
+
+#OBJECTIVES
+min: (global.solar_an_capex + global.solar_opex) * capacity;
+
+
+#NODE wind
+
+#PARAMETERS
+capacity_factor = import "../data/pure_wind_offshore.csv";
+
+#VARIABLES
+external: capacity;
+external: power[T];
+
+#CONSTRAINTS
+capacity >= 0;
+power[t] >= 0;
+power[t] <= capacity_factor[t] * capacity;
+
+#OBJECTIVES
+min: (global.wind_an_capex + global.wind_opex) * capacity;
+
+
+#NODE battery
+
+#PARAMETERS
+self_discharge = 0.000028;
+efficiency_charge = 0.97;
+efficiency_discharge = 0.97;
+c_rate = 0.5;
+
+#VARIABLES
+external: capacity;
+external: battery_in[T];
+external: battery_out[T];
+external: battery_charge[T];
+
+#CONSTRAINTS
+capacity >= 0;
+
+battery_in[t] >= 0;
+battery_out[t] >= 0;
+battery_charge[t] >= 0;
+
+battery_in[t] <= capacity * c_rate;
+battery_out[t] <= capacity * c_rate;
+
+battery_charge[t] <= capacity;
+
+battery_charge[t+1] == (1-self_discharge) * battery_charge[t]
++ efficiency_charge * battery_in[t]
+- battery_out[t] / efficiency_discharge;
+
+battery_charge[T-1] >= battery_charge[0];
+
+#OBJECTIVES
+min: (global.battery_an_capex + global.battery_opex) * capacity;
+
+
+#NODE penalty
+
+#PARAMETERS
+cost_no_furnish = 1000000;
+
+#VARIABLES
+external: amount_not_furnish[T];
+
+#CONSTRAINTS
+amount_not_furnish[t] >= 0;
+
+#OBJECTIVES
+min: amount_not_furnish[t] * cost_no_furnish;
+
+
+#HYPEREDGE power_balance
+
+#PARAMETERS
+electrical_load = import "../data/conso_normalized.csv";
+
+#CONSTRAINTS
+
+solar_pv.power[t]
++ wind.power[t]
++ battery.battery_out[t]
++ penalty.amount_not_furnish[t]
+
+== global.load_scale * electrical_load[t]
++ battery.battery_in[t];
